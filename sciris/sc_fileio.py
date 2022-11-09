@@ -150,7 +150,7 @@ https://stackoverflow.com/questions/41554738/how-to-load-an-old-pickle-file
 
 
 def save(filename=None, obj=None, compresslevel=5, verbose=0, folder=None, method='pickle',
-         sanitizepath=True, die=False, *args, **kwargs):
+         sanitizepath=True, die=None, *args, **kwargs):
     '''
     Save an object to file as a gzipped pickle -- use compression 5 by default,
     since more is much slower but not much smaller. Once saved, can be loaded
@@ -200,8 +200,8 @@ def save(filename=None, obj=None, compresslevel=5, verbose=0, folder=None, metho
 
     # Handle object
     if obj is None: # pragma: no cover
-        errormsg = "No object was supplied to saveobj(), or the object was empty; if this is intentional, set die='never'"
-        if die != 'never':
+        errormsg = "No object was supplied to saveobj(), or the object was empty; if this is intentional, set die=False"
+        if die or die is None:
             raise ValueError(errormsg)
 
     # Actually save

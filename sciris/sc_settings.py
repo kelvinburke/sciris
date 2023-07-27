@@ -629,7 +629,9 @@ class ScirisOptions(sco.objdict):
 
 
 # Create the options on module load
+print(f'  pre-options: {time()-start}')
 options = ScirisOptions()
+print(f'  post-options: {time()-start}')
 
 
 #%% Module help

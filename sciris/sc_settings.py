@@ -257,7 +257,7 @@ class ScirisOptions(sco.objdict):
         print(f'          get_orig: pre-backend: {time()-start}')
 
         optdesc.backend = 'Set the Matplotlib backend (use "agg" for non-interactive)'
-        options.backend = parse_env('SCIRIS_BACKEND', pl.rcParams['backend'], 'str')
+        options.backend = parse_env('SCIRIS_BACKEND', dict.__getitem__(pl.rcParams, 'backend'), 'str')
 
         print(f'          get_orig: post-backend: {time()-start}')
 

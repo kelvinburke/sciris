@@ -148,11 +148,17 @@ class ScirisOptions(sco.objdict):
     '''
 
     def __init__(self):
+        print(f'      start: {time()-start}')
         super().__init__()
+        print(f'      init: {time()-start}')
         optdesc, options = self.get_orig_options() # Get the options
+        print(f'      orig: {time()-start}')
         self.update(options) # Update this object with them
+        print(f'      update: {time()-start}')
         self.optdesc = optdesc # Set the description as an attribute, not a dict entry
+        print(f'      optdesc: {time()-start}')
         self.orig_options = scu.dcp(options) # Copy the default options
+        print(f'      copy: {time()-start}')
         return
 
 
@@ -214,9 +220,13 @@ class ScirisOptions(sco.objdict):
         :meth:`sc.options.set('defaults') <ScirisOptions.set>` instead.
         '''
 
+        print(f'          get_orig: start: {time()-start}')
+
         # Options acts like a class, but is actually an objdict for simplicity
         optdesc = sco.objdict() # Help for the options
         options = sco.objdict() # The options
+
+        print(f'          get_orig: objdict: {time()-start}')
 
         optdesc.sep = 'Set thousands seperator'
         options.sep = parse_env('SCIRIS_SEP', ',', 'str')
@@ -233,6 +243,8 @@ class ScirisOptions(sco.objdict):
         optdesc.font = 'Set the default font family (e.g., sans-serif or Arial)'
         options.font = parse_env('SCIRIS_FONT', pl.rcParams['font.family'], None) # Can be a string or list, so don't cast it to any object
 
+        print(f'          get_orig: halfway: {time()-start}')
+
         optdesc.fontsize = 'Set the default font size'
         options.fontsize = parse_env('SCIRIS_FONT_SIZE', pl.rcParams['font.size'], 'str')
 
@@ -242,11 +254,17 @@ class ScirisOptions(sco.objdict):
         optdesc.jupyter = 'Convenience method to set common settings for Jupyter notebooks: set to "auto" (which detects if Jupyter is running), "retina", "default" (or empty, which use regular PNG output), or "widget" to set backend'
         options.jupyter = parse_env('SCIRIS_JUPYTER', 'auto', 'str')
 
+        print(f'          get_orig: pre-backend: {time()-start}')
+
         optdesc.backend = 'Set the Matplotlib backend (use "agg" for non-interactive)'
         options.backend = parse_env('SCIRIS_BACKEND', pl.get_backend(), 'str')
 
+        print(f'          get_orig: post-backend: {time()-start}')
+
         optdesc.rc = 'Matplotlib rc (run control) style parameters used during plotting -- usually set automatically by "style" option'
         options.rc = {}
+
+        print(f'          get_orig: end: {time()-start}')
 
         return optdesc, options
 

@@ -10,6 +10,7 @@ Highlights:
 
 import warnings
 import numpy as np
+import cloudpickle
 import multiprocess as mp
 import multiprocessing as mpi
 import concurrent.futures as cf
@@ -52,6 +53,20 @@ def _progressbar(globaldict, njobs, started, **kwargs):
     elapsed = (sc.now() - started).total_seconds()
     sc.progressbar(done, njobs, label=f'Job {done}/{njobs} ({elapsed:.1f} s)', **kwargs)
     return
+
+_present_func, _present_args, _present_kwargs = None, None, None
+
+def _init_worker(pickled_func, pickled_args, pickled_kwargs, unpickle):
+    global _present_func, _present_args, _present_kwargs
+
+    if unpickle:
+        pickled_func   = cloudpickle.loads(pickled_func)
+        pickled_args   = cloudpickle.loads(pickled_args)
+        pickled_kwargs = cloudpickle.loads(pickled_kwargs)
+
+    _present_func   = pickled_func
+    _present_args   = pickled_args
+    _present_kwargs = pickled_kwargs
 
 
 class Parallel:
@@ -149,6 +164,7 @@ class Parallel:
         self.globaldict   = None
         self.map_func     = None
         self.is_async     = None
+        self.presend_args = None
         self.jobs         = None
         self.results      = None
         self.success      = None
@@ -294,7 +310,7 @@ class Parallel:
         
         # Handle the choice of parallelizer
         if sc.isstring(parallelizer):
-            parallelizer = parallelizer.replace('copy', '').replace('async', '').replace('-', '')
+            parallelizer = parallelizer.replace('copy', '').replace('presend','').replace('share','').replace('async', '').replace('-', '')
             try:
                 self.method = self.defaults.mapping[parallelizer]
             except:
@@ -313,7 +329,13 @@ class Parallel:
                 errormsg = f'You have specified to use async with "{self.method}", but async is only supported for: {sc.strjoin(supports_async)}.'
                 raise ValueError(errormsg)
         self.is_async = is_async
-        
+
+        # Handle presend
+        supports_presend = ['multiprocess', 'multiprocessing', 'concurrent.futures', 'thread'] # Maybe thread?
+        self.presend_args = sc.isstring(self.parallelizer) and self.method in supports_presend and 'presend' in self.parallelizer
+        if self.presend_args:
+            self.presend_args = 'presend-copy' if 'presend-copy' in self.parallelizer else 'presend-share'
+
         return
     
     
@@ -331,26 +353,33 @@ class Parallel:
             else:
                 map_func = pool.map
             return map_func
-        
+
+        initializer = None
+        initializer_args = tuple()
+        if self.presend_args:
+            share_args = self.presend_args == 'presend-share'
+            initializer = _init_worker
+            initializer_args = (cloudpickle.dumps(self.func), cloudpickle.dumps(self.args), cloudpickle.dumps(self.kwargs), share_args)
+
         # Choose parallelizer and map function
         if method == 'serial':
             pool = None
             map_func = lambda task,argslist: list(map(task, argslist))
         
         elif method == 'multiprocess': # Main use case
-            pool = mp.Pool(processes=ncpus)
+            pool = mp.Pool(processes=ncpus, initializer=initializer, initargs=initializer_args)
             map_func = make_async_func(pool)
         
         elif method == 'multiprocessing':
-            pool = mpi.Pool(processes=ncpus)
+            pool = mpi.Pool(processes=ncpus, initializer=initializer, initargs=initializer_args)
             map_func = make_async_func(pool)
         
         elif method == 'concurrent.futures':
-            pool = cf.ProcessPoolExecutor(max_workers=ncpus)
+            pool = cf.ProcessPoolExecutor(max_workers=ncpus, initializer=initializer, initargs=initializer_args)
             map_func = pool.map
         
         elif method == 'thread':
-            pool = cf.ThreadPoolExecutor(max_workers=ncpus)
+            pool = cf.ThreadPoolExecutor(max_workers=ncpus, initializer=initializer, initargs=initializer_args)
             map_func = pool.map
         
         elif method == 'custom':
@@ -406,7 +435,10 @@ class Parallel:
             
         # Check for additional global arguments
         useglobal = True if self.inputdict is not None else False
-            
+        func   = self.func   if not self.presend_args else self.presend_args
+        args   = self.args   if not self.presend_args else self.presend_args
+        kwargs = self.kwargs if not self.presend_args else self.presend_args
+
         # Construct the argument list for each job
         for index in range(self.njobs):
             if iterarg is None:
@@ -425,10 +457,10 @@ class Parallel:
                 else:  # pragma: no cover # Should be caught by previous checking, so shouldn't happen
                     errormsg = f'iterkwargs type not understood ({type(iterkwargs)})'
                     raise TypeError(errormsg)
-            taskargs = TaskArgs(func=self.func, index=index, njobs=self.njobs, iterval=iterval, iterdict=iterdict,
-                                args=self.args, kwargs=self.kwargs, maxcpu=self.maxcpu, maxmem=self.maxmem,
-                                interval=self.interval, embarrassing=self.embarrassing, callback=self.callback, 
-                                progress=self.progress, globaldict=self.globaldict, useglobal=useglobal, 
+            taskargs = TaskArgs(func=func, index=index, njobs=self.njobs, iterval=iterval, iterdict=iterdict,
+                                args=args, kwargs=kwargs, maxcpu=self.maxcpu, maxmem=self.maxmem,
+                                interval=self.interval, embarrassing=self.embarrassing, callback=self.callback,
+                                progress=self.progress, globaldict=self.globaldict, useglobal=useglobal,
                                 started=self.times.started, die=self.die)
             argslist.append(taskargs)
         
@@ -792,12 +824,13 @@ def _task(taskargs):
     
     *New in version 3.0.0:* renamed from "_parallel_task" to "_task"; return output dict with metadata
     """
-    
+    global _present_func, _present_args, _present_kwargs
+
     # Handle inputs
-    func   = taskargs.func
     index  = taskargs.index
-    args   = taskargs.args
-    kwargs = taskargs.kwargs
+    func   = _present_func if taskargs.func == 'presend-share'     else cloudpickle.loads(_present_func) if taskargs.func == 'presend-copy'     else taskargs.func
+    args   = _present_args if taskargs.args == 'presend-share'     else cloudpickle.loads(_present_args) if taskargs.args == 'presend-copy'     else taskargs.args
+    kwargs = _present_kwargs if taskargs.kwargs == 'presend-share' else cloudpickle.loads(_present_kwargs) if taskargs.kwargs == 'presend-copy' else taskargs.kwargs
     if args   is None: args   = ()
     if kwargs is None: kwargs = {}
     if taskargs.iterval is not None:
